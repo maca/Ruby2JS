@@ -1,4 +1,5 @@
 require  File.dirname( __FILE__ ) + '/spec_helper'
+require 'ruby_parser'
 
 describe RubyToJs do
   
@@ -15,6 +16,7 @@ describe RubyToJs do
       RubyToJs.new( rb_parse( "1" ) ).to_js.should        == '1'
       RubyToJs.new( rb_parse( "'string'" ) ).to_js.should == '"string"'
       RubyToJs.new( rb_parse( ":symbol" ) ).to_js.should  == '"symbol"'
+      RubyToJs.new( rb_parse( "nil" ) ).to_js.should      == 'null'
     end
     
     it "should parse simple hash" do
@@ -117,6 +119,44 @@ describe RubyToJs do
     it "should parse nested expressions" do
       exp = '1 + (1 + 1)'
       to_js( exp ).should == exp
+    end
+    
+    it "should parse complex nested expressions" do
+      exp = '1 + (1 + (1 + (1 * (2 - 1))))'
+      to_js( exp ).should == exp
+    end
+    
+    it "should parse complex nested expressions with method calls" do
+      exp = '1 + (a() + (1 + (1 * (b() - d()))))'
+      to_js( exp ).should == exp
+    end
+    
+    it "should parse complex nested expressions with method calls and variables" do
+      exp = 'a = 5; 1 + (a + (1 + (a * (b() - d()))))'
+      to_js( exp ).should == "var " << exp
+    end
+  end
+  
+  describe 'control' do
+    it "should parse single line if" do
+      to_js( '1 if true' ).should == 'if (true) {1}'
+    end
+    
+    it "should parse if else" do
+      to_js( 'if true; 1; else; 2; end' ).should == 'if (true) {1} else {2}'
+    end
+    
+    it "should parse if elsif" do
+      to_js( 'if true; 1; elsif false; 2; else; 3; end' ).should == 'if (true) {1} else if (false) {2} else {3}'
+    end
+    
+    it "should parse if elsif elsif" do
+      to_js( 'if true; 1; elsif false; 2; elsif (true or false); 3; else; nassif; end' ).should == 'if (true) {1} else if (false) {2} else if (true || false) {3} else {nassif()}' 
+    end
+    
+    it "should handle basic variable scope" do
+      to_js( 'a = 1; if true; a = 2; b = 1; elsif false; a = 3; b = 2; else; a = 4; b =3; end' ).should == 'var a = 1; if (true) {a = 2; var b = 1} else if (false) {a = 3; var b = 2} else {a = 4; var b = 3}'
+      
     end
   end
   
