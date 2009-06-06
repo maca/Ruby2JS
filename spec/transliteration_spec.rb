@@ -1,104 +1,108 @@
 require  File.dirname( __FILE__ ) + '/spec_helper'
 require 'ruby_parser'
 
-describe RubyToJs do
+describe RubyToJS do
   
   def rb_parse( string )
     RubyParser.new.parse string
   end
   
   def to_js( string)
-    RubyToJs.new( rb_parse( string ) ).to_js
+    RubyToJS.new( rb_parse( string ) ).to_js
   end
   
   describe 'literals' do
     it "should parse literals and strings" do
-      RubyToJs.new( rb_parse( "1" ) ).to_js.should        == '1'
-      RubyToJs.new( rb_parse( "'string'" ) ).to_js.should == '"string"'
-      RubyToJs.new( rb_parse( ":symbol" ) ).to_js.should  == '"symbol"'
-      RubyToJs.new( rb_parse( "nil" ) ).to_js.should      == 'null'
-      RubyToJs.new( rb_parse( "Constant" ) ).to_js.should == 'Constant'
+      to_js( "1" ).should        == '1'
+      to_js( "'string'" ).should == '"string"'
+      to_js( ":symbol" ).should  == '"symbol"'
+      to_js( "nil" ).should      == 'null'
+      to_js( "Constant" ).should == 'Constant'
     end
     
     it "should parse simple hash" do
-      RubyToJs.new( rb_parse( "{}" ) ).to_js.should            == '{}'
-      RubyToJs.new( rb_parse( "{ :a => :b }" ) ).to_js.should  == '{"a" : "b"}'
+      to_js( "{}" ).should            == '{}'
+      to_js( "{ :a => :b }" ).should  == '{"a" : "b"}'
     end
     
     it "should parse array" do
-      RubyToJs.new( rb_parse( "[]" ) ).to_js.should         == '[]'
-      RubyToJs.new( rb_parse( "[1, 2, 3]" ) ).to_js.should  == '[1, 2, 3]'
+      to_js( "[]" ).should         == '[]'
+      to_js( "[1, 2, 3]" ).should  == '[1, 2, 3]'
     end
     
     it "should parse nested hash" do
-      RubyToJs.new( rb_parse( "{ :a => {:b => :c} }" ) ).to_js.should  == '{"a" : {"b" : "c"}}'
+      to_js( "{ :a => {:b => :c} }" ).should  == '{"a" : {"b" : "c"}}'
     end
     
     it "should parse array" do
-      RubyToJs.new( rb_parse( "[1, [2, 3]]" ) ).to_js.should  == '[1, [2, 3]]'
+      to_js( "[1, [2, 3]]" ).should  == '[1, [2, 3]]'
+    end
+    
+    it "should parse global variables" do
+      to_js( "$a = 1" ).should == 'a = 1'
     end
   end
   
   describe 'assign' do
     it "should parse left assign" do
-      RubyToJs.new( rb_parse( "a = 1" ) ).to_js.should        == 'var a = 1'
-      RubyToJs.new( rb_parse( "a = 'string'" ) ).to_js.should == 'var a = "string"'
-      RubyToJs.new( rb_parse( "a = :symbol" ) ).to_js.should  == 'var a = "symbol"'
+      to_js( "a = 1" ).should        == 'var a = 1'
+      to_js( "a = 'string'" ).should == 'var a = "string"'
+      to_js( "a = :symbol" ).should  == 'var a = "symbol"'
     end
     
     it "should not output var if variable is allready declared within a context" do
-      RubyToJs.new( rb_parse( "a = 1; a = 2" ) ).to_js.should == 'var a = 1; a = 2'
+      to_js( "a = 1; a = 2" ).should == 'var a = 1; a = 2'
     end
     
     it "should parse mass assign" do
-      RubyToJs.new( rb_parse( "a , b = 1, 2" ) ).to_js.should == 'var a = 1; var b = 2'
+      to_js( "a , b = 1, 2" ).should == 'var a = 1; var b = 2'
     end
   end
   
   describe 'method call' do
     it "should parse method call with no args" do
-      RubyToJs.new( rb_parse( "a" ) ).to_js.should == 'a()'
+      to_js( "a" ).should == 'a()'
     end
     
     it "should parse method call with args" do
-      RubyToJs.new( rb_parse( "a 1, 2, 3" ) ).to_js.should == 'a(1, 2, 3)'
+      to_js( "a 1, 2, 3" ).should == 'a(1, 2, 3)'
     end
     
     it "should parse lvar as variable call" do
-      RubyToJs.new( rb_parse( "a = 1; a" ) ).to_js.should == 'var a = 1; a'
+      to_js( "a = 1; a" ).should == 'var a = 1; a'
     end
     
     it "should parse square bracket call" do
-      RubyToJs.new( rb_parse( "a = [1]; a[0]" ) ).to_js.should == 'var a = [1]; a[0]'
+      to_js( "a = [1]; a[0]" ).should == 'var a = [1]; a[0]'
     end
     
     it "should parse nested square bracket call" do
-      RubyToJs.new( rb_parse( "a = [[1]]; a[0][0]" ) ).to_js.should == 'var a = [[1]]; a[0][0]'
+      to_js( "a = [[1]]; a[0][0]" ).should == 'var a = [[1]]; a[0][0]'
     end
     
     it "should parse binary operation" do
-      RubyToJs.new( rb_parse( "1 + 1" ) ).to_js.should == '1 + 1'
+      to_js( "1 + 1" ).should == '1 + 1'
     end
     
     it "should call method on literal" do
-      RubyToJs.new( rb_parse( "[0][0]" ) ).to_js.should == '[0][0]'
+      to_js( "[0][0]" ).should == '[0][0]'
     end
   end
   
   describe 'boolean' do
     it "should parse boolean" do
-      RubyToJs.new( rb_parse( "true; false" ) ).to_js.should    == 'true; false'
+      to_js( "true; false" ).should    == 'true; false'
     end
     
     it "should parse logic operators" do
-      RubyToJs.new( rb_parse( "true && false" ) ).to_js.should  == 'true && false'
-      RubyToJs.new( rb_parse( "true and false" ) ).to_js.should == 'true && false'
-      RubyToJs.new( rb_parse( "true || false" ) ).to_js.should  == 'true || false'
-      RubyToJs.new( rb_parse( "true or false" ) ).to_js.should  == 'true || false'
+      to_js( "true && false" ).should  == 'true && false'
+      to_js( "true and false" ).should == 'true && false'
+      to_js( "true || false" ).should  == 'true || false'
+      to_js( "true or false" ).should  == 'true || false'
     end
     
     it "should parse not" do
-      RubyToJs.new( rb_parse( "not true" ) ).to_js.should    == '!true'
+      to_js( "not true" ).should    == '!true'
     end
     
     it "should parse nested logic" do

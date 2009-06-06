@@ -3,13 +3,13 @@ require 'pp'
 
 $:.unshift(File.dirname(__FILE__)) unless $:.include?(File.dirname(__FILE__)) || $:.include?(File.expand_path(File.dirname(__FILE__)))
 
-class RubyToJs
+class RubyToJS
   VERSION   = '0.0.1'
   LOGICAL   = :and, :not, :or
   BINARY    = :+, :-, :*, :/, :%
   OPERATORS = [[:*, :/, :%], [:+, :-]]
   
-  def initialize( sexp, vars = [[]] )
+  def initialize( sexp, vars = [] )
     @sexp, @vars = sexp, vars.dup
   end
   
@@ -23,7 +23,7 @@ class RubyToJs
   end
   
   def scope( sexp, vars, parent = nil )
-    self.class.new( sexp, vars ).parse( sexp, parent )
+    self.class.new( nil, vars ).parse( sexp, parent )
   end
 
   def parse sexp, parent = nil, group = false
@@ -31,7 +31,7 @@ class RubyToJs
     case operand = sexp.shift
       
     when *LOGICAL
-      group = true if LOGICAL.include? parent
+      group  = true if LOGICAL.include? parent
     
     when :call      
       method = sexp[1]
@@ -42,10 +42,6 @@ class RubyToJs
       elsif BINARY.include? method or method == :new
         operand = sexp.unshift.delete( method )
       end
-      
-    when :block
-      @vars = [[], @vars]
-      
     end
     
     output = handle operand, sexp, parent
@@ -82,9 +78,12 @@ class RubyToJs
     when :lasgn
       var    = mutate_name sexp.shift
       value  = parse sexp.shift
-      output = value ? "#{ 'var ' unless @vars.flatten.include? var }#{ var } = #{ value }" : var
-      @vars.first << var
+      output = value ? "#{ 'var ' unless @vars.include? var }#{ var } = #{ value }" : var
+      @vars << var
       output
+      
+    when :gasgn
+      "#{ mutate_name sexp.shift } = #{ parse sexp.shift }".sub('$', '')
       
     when :hash
       hashy  = []
@@ -121,9 +120,7 @@ class RubyToJs
       when :[]
         raise 'parse error' unless receiver
         "#{ parse receiver }[#{ parse args }]"
-        
 
-        
       else
         "#{ parse receiver }#{ '.' if receiver }#{ method }(#{ parse args })"
       end
