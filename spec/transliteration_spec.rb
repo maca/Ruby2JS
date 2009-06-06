@@ -17,6 +17,7 @@ describe RubyToJs do
       RubyToJs.new( rb_parse( "'string'" ) ).to_js.should == '"string"'
       RubyToJs.new( rb_parse( ":symbol" ) ).to_js.should  == '"symbol"'
       RubyToJs.new( rb_parse( "nil" ) ).to_js.should      == 'null'
+      RubyToJs.new( rb_parse( "Constant" ) ).to_js.should == 'Constant'
     end
     
     it "should parse simple hash" do
@@ -116,8 +117,13 @@ describe RubyToJs do
   end
   
   describe 'expressions' do
+    it "should not nest" do
+      exp = '1 + 1 * 1'
+      to_js( exp ).should == exp
+    end
+    
     it "should parse nested expressions" do
-      exp = '1 + (1 + 1)'
+      exp = '(1 + 1) * 1'
       to_js( exp ).should == exp
     end
     
@@ -156,8 +162,47 @@ describe RubyToJs do
     
     it "should handle basic variable scope" do
       to_js( 'a = 1; if true; a = 2; b = 1; elsif false; a = 3; b = 2; else; a = 4; b =3; end' ).should == 'var a = 1; if (true) {a = 2; var b = 1} else if (false) {a = 3; var b = 2} else {a = 4; var b = 3}'
-      
     end
   end
   
+  describe 'blocks' do
+    it "should parse proc" do
+      to_js('Proc.new {}').should == 'function() {}'
+    end
+    
+    it "should parse lambda" do
+      to_js( 'lambda {}').should == 'function() {}'
+    end
+    
+    it "should handle basic variable scope" do
+      to_js( 'a = 1; lambda { a = 2; b = 1}').should == 'var a = 1; function() {a = 2; var b = 1}'
+    end
+    
+    it "should handle variable scope" do
+      to_js( 'a = 1; lambda { a = 2; b = 1; lambda{ a = 3; b = 2; c = 1; lambda{ a = 4; b = 3; c = 2; d = 1 } } }').
+        should == 'var a = 1; function() {a = 2; var b = 1; function() {a = 3; b = 2; var c = 1; function() {a = 4; b = 3; c = 2; var d = 1}}}'
+    end
+    
+    it "should handle one argument" do
+      to_js( 'lambda { |a| a + 1 }').should == 'function(a) {a + 1}'
+    end
+    
+    it "should handle arguments" do
+      to_js( 'lambda { |a,b| a + b }').should == 'function(a, b) {a + b}'
+    end
+    
+    it "should pass functions" do
+      to_js( 'run("task"){ |task| do_run task}').should == 'run("task", function(task) {do_run(task)})'
+    end
+    
+    it "should really handle variable scope" do
+      to_js('a = 1; lambda {|b| c = 0; a = b - c }; lambda { |b| c = 1; a = b + c }').
+        should == 'var a = 1; function(b) {var c = 0; a = b - c}; function(b) {var c = 1; a = b + c}'
+    end
+    
+    it "should really handle variable scope" do
+      to_js('a, d = 1, 2; lambda {|b| c = 0; a = b - c * d}; lambda { |b| c = 1; a = b + c * d}').
+        should == 'var a = 1; var d = 2; function(b) {var c = 0; a = b - c * d}; function(b) {var c = 1; a = b + c * d}'
+    end
+  end
 end

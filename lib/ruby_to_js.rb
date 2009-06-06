@@ -8,36 +8,52 @@ class RubyToJs
   LOGICAL  = :and, :not, :or
   BINARY   = :+, :-, :*, :/, :%
   
-  def initialize( sexp )
-    @sexp, @assigns = sexp, []
+  def initialize( sexp, vars = [[]] )
+    @sexp, @vars = sexp, vars.dup
   end
   
   def to_js
-    parse( @sexp )
+    parse( @sexp, nil )
+  end
+  
+  def scope( sexp, vars, parent = nil )
+    self.class.new( sexp, vars ).parse( sexp, parent )
   end
 
-  protected
-  def parse sexp, parent = nil    
+  
+  def parse sexp, parent = nil, group = false
+    
+    
     return sexp unless sexp.kind_of? Array
-    operand = sexp.shift
-
-    case operand
+    
+    case operand = sexp.shift
       
     when *LOGICAL
-      return "(#{ handle operand, sexp, parent })"     if LOGICAL.include? parent
+      group = true if LOGICAL.include? parent
     
     when :call
-      operand = sexp.unshift.delete( sexp[1] ) if BINARY.include? sexp[1]
+      method  = sexp[1]
+      proc    = s(:const, :Proc)
+      
+      if sexp.first == proc and method == :new
+        sexp[0], sexp[1] = nil, :lambda
+      elsif BINARY.include? method or method == :new
+        operand = sexp.unshift.delete( method )
+      end
       
     when :arglist
-      if BINARY.include? parent
-        if call = sexp.find_node(:call)
-          return "(#{ handle operand, sexp, parent })" if BINARY.include? call[2]
-        end
+      if call  = sexp.find_node(:call) and BINARY.include? parent
+         group = true if BINARY.include? call[2]
       end
+      
+    when :block
+      @vars = [[], @vars]
+      
     end
     
-    handle operand, sexp, parent
+    output = handle operand, sexp, parent
+    output = "(#{ output })" if group
+    output
   end
   
   
@@ -48,7 +64,7 @@ class RubyToJs
       lit = sexp.shift
       lit.is_a?( Numeric ) ? lit.to_s : lit.to_s.inspect
       
-    when :lvar
+    when :lvar, :const
       sexp.shift.to_s
       
     when :true, :false
@@ -67,9 +83,10 @@ class RubyToJs
      "!#{ parse sexp.shift, operand }"
       
     when :lasgn
-      var       = mutate_name sexp.shift
-      output    = "#{ 'var ' unless @assigns.include? var }#{ var } = #{ parse sexp.shift }"
-      @assigns << var
+      var    = mutate_name sexp.shift
+      value  = parse sexp.shift
+      output = value ? "#{ 'var ' unless @vars.flatten.include? var }#{ var } = #{ value }" : var
+      @vars.first << var
       output
       
     when :hash
@@ -81,53 +98,62 @@ class RubyToJs
       "[#{ sexp.map{ |a| parse a }.join(', ') }]"
 
     when :block
-      self.class.new( sexp.unshift( :expressions ) ).to_js
-
-    when :expressions # Injected
       sexp.map{ |e| parse e }.join('; ')
-      
+            
     when *BINARY
       "#{ parse sexp.shift, operand } #{ operand } #{ parse sexp.shift, operand }"
       
     when :call
-      receiver, method, args = sexp.shift, sexp.shift, sexp.shift
+      receiver, method, args = parse( sexp.shift ), sexp.shift, parse( sexp.shift )
+      return args if method == :lambda unless receiver
       case method
         
       when :[]
         raise 'parse error' unless receiver
-        "#{ parse receiver }[#{ parse args }]"
+        "#{ receiver }[#{ args }]"
         
       else
-        "#{ parse receiver }#{ '.' if receiver }#{ method }(#{ parse args })"
+        "#{ receiver }#{ '.' if receiver }#{ method }(#{ args })"
       end
       
     when :arglist
       sexp.map{ |e| parse e }.join(', ')
       
     when :masgn
-      vars, values, output = sexp.shift[1..-1], sexp.shift[1..-1], []
-      vars.each_with_index do |var, i| 
-        output.push( var << values[i] )
+      if sexp.size == 1
+        sexp    = sexp.shift
+        sexp[0] = :arglist
+        parse sexp
+      else
+        sexp.first[1..-1].zip sexp.last[1..-1] do |var, val|
+          var << val
+        end
+        sexp = sexp.first
+        sexp[0] = :block
+        parse sexp
       end
-      parse output.unshift( :expressions )
     
     when :if
       condition    = parse sexp.shift
-      true_block   = parse sexp.shift
+      true_block   = scope sexp.shift, @vars
       elseif       = parse( sexp.find_node( :if, true ), :if )
       else_block   = parse( sexp.shift )
-            
+      
       output       = "if (#{ condition }) {#{ true_block }}"
       output.sub!('if', 'else if') if parent == :if
       output << " #{ elseif }" if elseif
       output << " else {#{ else_block }}" if else_block
       output
       
-      
-      
-      
-
-      
+    when :iter
+      caller       = sexp.shift
+      args         = sexp.shift
+      function     = s(:function, args, sexp.shift)
+      caller.last << function
+      parse caller
+    
+    when :function
+      "function(#{ parse sexp.shift }) {#{ scope sexp.shift, @vars }}"
       
     else 
       raise "unkonwn operand #{ operand.inspect }"
