@@ -128,18 +128,23 @@ describe RubyToJs do
     end
     
     it "should parse complex nested expressions" do
-      exp = '1 + (1 + (1 + (1 * (2 - 1))))'
+      exp = '1 + (1 + (1 + 1 * (2 - 1)))'
       to_js( exp ).should == exp
     end
     
     it "should parse complex nested expressions with method calls" do
-      exp = '1 + (a() + (1 + (1 * (b() - d()))))'
+      exp = '1 + (a() + (1 + 1 * (b() - d())))'
       to_js( exp ).should == exp
     end
     
     it "should parse complex nested expressions with method calls and variables" do
-      exp = 'a = 5; 1 + (a + (1 + (a * (b() - d()))))'
+      exp = 'a = 5; 1 + (a + (1 + a * (b() - d())))'
       to_js( exp ).should == "var " << exp
+    end
+    
+    it "should parse nested sender" do
+      exp = '((1 / 2) * 4 - (1 + 1)) - 1'
+      to_js( exp ).should == exp
     end
   end
   

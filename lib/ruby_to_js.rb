@@ -4,9 +4,10 @@ require 'pp'
 $:.unshift(File.dirname(__FILE__)) unless $:.include?(File.dirname(__FILE__)) || $:.include?(File.expand_path(File.dirname(__FILE__)))
 
 class RubyToJs
-  VERSION  = '0.0.1'
-  LOGICAL  = :and, :not, :or
-  BINARY   = :+, :-, :*, :/, :%
+  VERSION   = '0.0.1'
+  LOGICAL   = :and, :not, :or
+  BINARY    = :+, :-, :*, :/, :%
+  OPERATORS = [[:*, :/, :%], [:+, :-]]
   
   def initialize( sexp, vars = [[]] )
     @sexp, @vars = sexp, vars.dup
@@ -16,34 +17,30 @@ class RubyToJs
     parse( @sexp, nil )
   end
   
+  protected
+  def operator_index op
+    OPERATORS.index( OPERATORS.find{ |el| el.include? op } ) || 1/0.0
+  end
+  
   def scope( sexp, vars, parent = nil )
     self.class.new( sexp, vars ).parse( sexp, parent )
   end
 
-  
   def parse sexp, parent = nil, group = false
-    
-    
     return sexp unless sexp.kind_of? Array
-    
     case operand = sexp.shift
       
     when *LOGICAL
       group = true if LOGICAL.include? parent
     
-    when :call
-      method  = sexp[1]
-      proc    = s(:const, :Proc)
+    when :call      
+      method = sexp[1]
+      proc   = s(:const, :Proc)
       
       if sexp.first == proc and method == :new
         sexp[0], sexp[1] = nil, :lambda
       elsif BINARY.include? method or method == :new
         operand = sexp.unshift.delete( method )
-      end
-      
-    when :arglist
-      if call  = sexp.find_node(:call) and BINARY.include? parent
-         group = true if BINARY.include? call[2]
       end
       
     when :block
@@ -99,21 +96,36 @@ class RubyToJs
 
     when :block
       sexp.map{ |e| parse e }.join('; ')
-            
+      
     when *BINARY
-      "#{ parse sexp.shift, operand } #{ operand } #{ parse sexp.shift, operand }"
+      receiver, args = sexp.shift, sexp.shift
+      op_index  = operator_index operand
+      group     = receiver.first == :call && BINARY.include?( receiver[2] ) && op_index <= operator_index( receiver[2] )
+      receiver  = "#{ parse receiver }"
+      receiver  = "(#{ receiver })" if group
+      
+      if call = args.find_node(:call) 
+        group_args = BINARY.include?( call[2] ) if op_index <= operator_index( call[2] )
+      end
+      
+      args = parse args
+      args = "(#{ args })" if group_args
+      "#{ receiver } #{ operand } #{ args }"
+ 
       
     when :call
-      receiver, method, args = parse( sexp.shift ), sexp.shift, parse( sexp.shift )
-      return args if method == :lambda unless receiver
+      receiver, method, args = sexp.shift, sexp.shift, sexp.shift
+      return parse args if method == :lambda unless receiver
       case method
         
       when :[]
         raise 'parse error' unless receiver
-        "#{ receiver }[#{ args }]"
+        "#{ parse receiver }[#{ parse args }]"
+        
+
         
       else
-        "#{ receiver }#{ '.' if receiver }#{ method }(#{ args })"
+        "#{ parse receiver }#{ '.' if receiver }#{ method }(#{ parse args })"
       end
       
     when :arglist
