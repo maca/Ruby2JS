@@ -229,5 +229,39 @@ describe RubyToJS do
       to_js('a, d = 1, 2; lambda {|b| c = 0; a = b - c * d}; lambda { |b| c = 1; a = b + c * d}').
         should == 'var a = 1; var d = 2; function(b) {var c = 0; return a = b - c * d}; function(b) {var c = 1; return a = b + c * d}'
     end
+    
+    it "should parse with explicit return" do
+      to_js('Proc.new {return nil}').should == 'function() {return null}'
+    end
+  end
+
+  describe 'object definition' do
+    it "should parse class" do
+      to_js('class Person; end').should == 'function Person() {}'
+    end
+    
+    it "should parse class" do
+      to_js('class Person; def initialize(name); @name = name; end; end').should == 'function Person(name) {this._name = name}'
+    end
+    
+    it "should parse class" do
+      to_js('class Person; def initialize(name); @name = name; end; def name; @name; end; end').
+        should == 'function Person(name) {this._name = name}; Person.prototype.name = function() {return this._name}'
+    end
+    
+    it "should parse class" do
+      to_js('class Person; def initialize(name, surname); @name, @surname = name, surname; end; def full_name; @name  + @surname; end; end').
+        should == 'function Person(name, surname) {this._name = name; this._surname = surname}; Person.prototype.full_name = function() {return this._name + this._surname}'
+    end
+    
+    it "should parse class" do
+      to_js('class Person; attr_accessor :name; def initialize(name); @name = name; end; end').
+        should == 'function Person(name) {this._name = name}; Person.prototype.name = function(name) {if (name) {self._name = name} else {self._name}}'
+    end
+    
+    it "should parse metod def" do
+      to_js('def method; end').should == 'function method() {return null}'
+    end
+    
   end
 end

@@ -53,6 +53,12 @@ class RubyToJS
     when :gasgn
       "#{ mutate_name sexp.shift } = #{ parse sexp.shift }".sub('$', '')
       
+    when :iasgn
+      "#{ sexp.shift.to_s.sub('@', 'this._') } = #{ parse sexp.shift }"
+      
+    when :ivar
+      sexp.shift.to_s.sub('@', 'this._')
+      
     when :hash
       hashy  = []
       hashy << [ parse( sexp.shift ), parse( sexp.shift ) ] until sexp.empty?
@@ -62,7 +68,6 @@ class RubyToJS
       "[#{ sexp.map{ |a| parse a }.join(', ') }]"
 
     when :block
-      # sexp.push() if sexp.first = :lasgn
       sexp.map{ |e| parse e }.join('; ')
       
     when :return
@@ -102,6 +107,13 @@ class RubyToJS
       when :[]
         raise 'parse error' unless receiver
         "#{ parse receiver }[#{ parse args }]"
+        
+      when :attr_accessor
+        args.shift
+        args   = args.collect do |name|
+          name = name.last
+          parse( s(:defn, name, name) ).sub(/return null\}\z/, "if (name) {self._#{ name } = name} else {self._#{ name }}}")
+        end.join('; ')
         
       when *OPERATORS.flatten
         "#{ group ? group(receiver) : parse(receiver) } #{ method } #{ group_args ? group(args) : parse(args) }"  
@@ -148,14 +160,37 @@ class RubyToJS
     
     when :function
       args, body = sexp.shift, sexp.shift
-      body       = s(:nil) unless body
-      body       = s(:block, body)   unless body.first == :block
-      body.push s(:return, body.pop) unless body.last.first == :return
-      
-      body = scope body, @vars
+      body = s(:nil) unless body
+      body = s(:scope, body) unless body.first == :scope
+      body = parse body
       body.sub!(/return var (\w+) = ([^;]+)\z/, 'var \1 = \2; return \1')
+      "function(#{ parse args }) {#{ body }}"
       
-      "function(#{ parse args }) {#{ scope body, @vars }}"
+    when :defn
+      name = sexp.shift
+      sexp.unshift :function
+      parse( sexp ).sub('function', "function #{ name }")
+      
+    when :scope
+      body = sexp.shift
+      body = s(:block, body) unless body.first == :block
+      body.push s(:return, body.pop) unless body.last.first == :return
+      body = scope body, @vars
+      
+    when :class
+      name, inheritance, body = sexp.shift, sexp.shift, sexp.shift
+      unless init = body.find_node(:defn)
+        if block  = body.find_node(:block) and block.shift
+          methods = block.find_nodes(:defn) or s()
+          init    = block.delete methods.find { |m| m[1] == :initialize }
+          block   = block.collect { |m| parse( m ).sub(/function (\w+)/, "#{ name }.prototype.\\1 = function") }.join '; '
+        end
+      end
+      init ||= []
+      "#{ parse( s(:defn, name, init[2], init[3]) ).sub(/return (?:null|(.*))\}\z/, '\1}') }#{ '; ' if block }#{ block }"
+
+    when :args
+      sexp.join(', ')
       
     else 
       raise "unkonwn operand #{ operand.inspect }"
