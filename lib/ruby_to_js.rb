@@ -6,8 +6,7 @@ $:.unshift(File.dirname(__FILE__)) unless $:.include?(File.dirname(__FILE__)) ||
 class RubyToJS
   VERSION   = '0.0.1'
   LOGICAL   = :and, :not, :or
-  BINARY    = :+, :-, :*, :/, :%
-  OPERATORS = [[:*, :/, :%], [:+, :-]]
+  OPERATORS = [:[], :[]=], [:not], [:*, :/, :%], [:+, :-], [:and], [:or]
   
   def initialize( sexp, vars = [] )
     @sexp, @vars = sexp, vars.dup
@@ -19,40 +18,18 @@ class RubyToJS
   
   protected
   def operator_index op
-    OPERATORS.index( OPERATORS.find{ |el| el.include? op } ) || 1/0.0
+    OPERATORS.index( OPERATORS.find{ |el| el.include? op } ) || -1
   end
   
-  def scope( sexp, vars, parent = nil )
-    self.class.new( nil, vars ).parse( sexp, parent )
+  def scope( sexp, vars, ancestor = nil )
+    self.class.new( nil, vars ).parse( sexp, ancestor )
   end
 
-  def parse sexp, parent = nil, group = false
+  def parse sexp, ancestor = nil
     return sexp unless sexp.kind_of? Array
-    case operand = sexp.shift
-      
-    when *LOGICAL
-      group  = true if LOGICAL.include? parent
-    
-    when :call      
-      method = sexp[1]
-      proc   = s(:const, :Proc)
-      
-      if sexp.first == proc and method == :new
-        sexp[0], sexp[1] = nil, :lambda
-      elsif BINARY.include? method or method == :new
-        operand = sexp.unshift.delete( method )
-      end
-    end
-    
-    output = handle operand, sexp, parent
-    output = "(#{ output })" if group
-    output
-  end
-  
-  
-  def handle operand, sexp, parent
-    case operand
+    operand = sexp.shift
 
+    case operand
     when :lit, :str
       lit = sexp.shift
       lit.is_a?( Numeric ) ? lit.to_s : lit.to_s.inspect
@@ -65,16 +42,7 @@ class RubyToJS
       
     when :nil
       'null'
-      
-    when :and
-      "#{ parse sexp.shift, operand } && #{ parse sexp.shift, operand }"
-    
-    when :or
-      "#{ parse sexp.shift, operand } || #{ parse sexp.shift, operand }"
-    
-    when :not
-     "!#{ parse sexp.shift, operand }"
-      
+
     when :lasgn
       var    = mutate_name sexp.shift
       value  = parse sexp.shift
@@ -94,32 +62,49 @@ class RubyToJS
       "[#{ sexp.map{ |a| parse a }.join(', ') }]"
 
     when :block
+      # sexp.push() if sexp.first = :lasgn
       sexp.map{ |e| parse e }.join('; ')
       
-    when *BINARY
-      receiver, args = sexp.shift, sexp.shift
-      op_index  = operator_index operand
-      group     = receiver.first == :call && BINARY.include?( receiver[2] ) && op_index <= operator_index( receiver[2] )
-      receiver  = "#{ parse receiver }"
-      receiver  = "(#{ receiver })" if group
+    when :return
+      "return #{ parse sexp.shift }"
       
-      if call = args.find_node(:call) 
-        group_args = BINARY.include?( call[2] ) if op_index <= operator_index( call[2] )
+    when *LOGICAL
+      left, right = sexp.shift, sexp.shift
+      op_index    = operator_index operand
+      
+      lgroup      = LOGICAL.include?( left.first ) && op_index <= operator_index( left.first )
+      left        = parse left
+      left        = "(#{ left })" if lgroup
+                  
+      rgroup      = LOGICAL.include?( right.first ) && op_index <= operator_index( right.first ) if right
+      right       = parse right
+      right       = "(#{ right })" if rgroup
+
+      case operand
+      when :and
+        "#{ left } && #{ right }"
+      when :or
+        "#{ left } || #{ right }"
+      else
+        "!#{ left }"
       end
-      
-      args = parse args
-      args = "(#{ args })" if group_args
-      "#{ receiver } #{ operand } #{ args }"
- 
-      
+  
     when :call
       receiver, method, args = sexp.shift, sexp.shift, sexp.shift
-      return parse args if method == :lambda unless receiver
+      return parse args, :lambda if receiver == s(:const, :Proc) and method == :new or method == :lambda && !receiver
+      
+      op_index   = operator_index method
+      group      = receiver.first == :call && op_index <= operator_index( receiver[2] ) if receiver
+      call       = args.find_node(:call) 
+      group_args = op_index <= operator_index( call[2] ) if call
+
       case method
-        
       when :[]
         raise 'parse error' unless receiver
         "#{ parse receiver }[#{ parse args }]"
+        
+      when *OPERATORS.flatten
+        "#{ group ? group(receiver) : parse(receiver) } #{ method } #{ group_args ? group(args) : parse(args) }"  
 
       else
         "#{ parse receiver }#{ '.' if receiver }#{ method }(#{ parse args })"
@@ -149,7 +134,7 @@ class RubyToJS
       else_block   = parse( sexp.shift )
       
       output       = "if (#{ condition }) {#{ true_block }}"
-      output.sub!('if', 'else if') if parent == :if
+      output.sub!('if', 'else if') if ancestor == :if
       output << " #{ elseif }" if elseif
       output << " else {#{ else_block }}" if else_block
       output
@@ -162,12 +147,24 @@ class RubyToJS
       parse caller
     
     when :function
-      "function(#{ parse sexp.shift }) {#{ scope sexp.shift, @vars }}"
+      args, body = sexp.shift, sexp.shift
+      body       = s(:nil) unless body
+      body       = s(:block, body)   unless body.first == :block
+      body.push s(:return, body.pop) unless body.last.first == :return
+      
+      body = scope body, @vars
+      body.sub!(/return var (\w+) = ([^;]+)\z/, 'var \1 = \2; return \1')
+      
+      "function(#{ parse args }) {#{ scope body, @vars }}"
       
     else 
       raise "unkonwn operand #{ operand.inspect }"
     end
 
+  end
+  
+  def group( sexp )
+    "(#{ parse sexp })"
   end
   
   def mutate_name( name )

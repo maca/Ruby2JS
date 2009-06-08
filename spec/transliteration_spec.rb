@@ -87,6 +87,16 @@ describe RubyToJS do
     it "should call method on literal" do
       to_js( "[0][0]" ).should == '[0][0]'
     end
+    
+    it "should nest arguments as needed" do
+      exp = 'a((1 + 2) * 2)'
+      to_js( exp ).should == exp
+    end
+    
+    it "should chain method calls" do
+      exp = 'a().one().two().three()'
+      to_js( exp ).should == exp
+    end
   end
   
   describe 'boolean' do
@@ -111,13 +121,14 @@ describe RubyToJS do
     
     it "should parse more complex nested logic" do
       logic = '!((true && false) || (false || false))'
+      to_js( logic ).should == "!(true && false || (false || false))"
+    end
+    
+    it "should parse another nested login example" do
+      logic = '!true && true' 
       to_js( logic ).should == logic
     end
     
-    it "should parse yet more complex nested logic" do
-      logic = '!((true && (false && (true && true))) || (false || false))'
-      to_js( logic ).should == logic
-    end
   end
   
   describe 'expressions' do
@@ -150,6 +161,11 @@ describe RubyToJS do
       exp = '((1 / 2) * 4 - (1 + 1)) - 1'
       to_js( exp ).should == exp
     end
+    
+    it "should nest arguments as needed" do
+      exp = 'a(1 + 2)'
+      to_js( exp ).should == exp
+    end
   end
   
   describe 'control' do
@@ -175,43 +191,43 @@ describe RubyToJS do
   end
   
   describe 'blocks' do
+    it "should parse return" do
+      exp = 'return 1'
+      to_js( exp ).should == exp
+    end
+    
     it "should parse proc" do
-      to_js('Proc.new {}').should == 'function() {}'
+      to_js('Proc.new {}').should == 'function() {return null}'
     end
     
     it "should parse lambda" do
-      to_js( 'lambda {}').should == 'function() {}'
+      to_js( 'lambda {}').should == 'function() {return null}'
     end
     
     it "should handle basic variable scope" do
-      to_js( 'a = 1; lambda { a = 2; b = 1}').should == 'var a = 1; function() {a = 2; var b = 1}'
-    end
-    
-    it "should handle variable scope" do
-      to_js( 'a = 1; lambda { a = 2; b = 1; lambda{ a = 3; b = 2; c = 1; lambda{ a = 4; b = 3; c = 2; d = 1 } } }').
-        should == 'var a = 1; function() {a = 2; var b = 1; function() {a = 3; b = 2; var c = 1; function() {a = 4; b = 3; c = 2; var d = 1}}}'
+      to_js( 'a = 1; lambda { a = 2; b = 1}').should == 'var a = 1; function() {a = 2; var b = 1; return b}'
     end
     
     it "should handle one argument" do
-      to_js( 'lambda { |a| a + 1 }').should == 'function(a) {a + 1}'
+      to_js( 'lambda { |a| a + 1 }').should == 'function(a) {return a + 1}'
     end
     
     it "should handle arguments" do
-      to_js( 'lambda { |a,b| a + b }').should == 'function(a, b) {a + b}'
+      to_js( 'lambda { |a,b| a + b }').should == 'function(a, b) {return a + b}'
     end
     
     it "should pass functions" do
-      to_js( 'run("task"){ |task| do_run task}').should == 'run("task", function(task) {do_run(task)})'
+      to_js( 'run("task"){ |task| do_run task}').should == 'run("task", function(task) {return do_run(task)})'
     end
     
-    it "should really handle variable scope" do
+    it "should handle variable scope" do
       to_js('a = 1; lambda {|b| c = 0; a = b - c }; lambda { |b| c = 1; a = b + c }').
-        should == 'var a = 1; function(b) {var c = 0; a = b - c}; function(b) {var c = 1; a = b + c}'
+        should == 'var a = 1; function(b) {var c = 0; return a = b - c}; function(b) {var c = 1; return a = b + c}'
     end
     
     it "should really handle variable scope" do
       to_js('a, d = 1, 2; lambda {|b| c = 0; a = b - c * d}; lambda { |b| c = 1; a = b + c * d}').
-        should == 'var a = 1; var d = 2; function(b) {var c = 0; a = b - c * d}; function(b) {var c = 1; a = b + c * d}'
+        should == 'var a = 1; var d = 2; function(b) {var c = 0; return a = b - c * d}; function(b) {var c = 1; return a = b + c * d}'
     end
   end
 end
