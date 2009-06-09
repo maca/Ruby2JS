@@ -1,14 +1,13 @@
 require 'sexp_processor'
-require 'pp'
 
-$:.unshift(File.dirname(__FILE__)) unless $:.include?(File.dirname(__FILE__)) || $:.include?(File.expand_path(File.dirname(__FILE__)))
+# $:.unshift(File.dirname(__FILE__)) unless $:.include?(File.dirname(__FILE__)) || $:.include?(File.expand_path(File.dirname(__FILE__)))
 
 class RubyToJS
   VERSION   = '0.0.1'
   LOGICAL   = :and, :not, :or
-  OPERATORS = [:[], :[]=], [:not], [:*, :/, :%], [:+, :-], [:and], [:or]
+  OPERATORS = [:[], :[]=], [:not], [:*, :/, :%], [:+, :-, :<<], [:and], [:or]
   
-  def initialize( sexp, vars = [] )
+  def initialize( sexp, vars = {} )
     @sexp, @vars = sexp, vars.dup
   end
   
@@ -30,6 +29,7 @@ class RubyToJS
     operand = sexp.shift
 
     case operand
+      
     when :lit, :str
       lit = sexp.shift
       lit.is_a?( Numeric ) ? lit.to_s : lit.to_s.inspect
@@ -44,10 +44,12 @@ class RubyToJS
       'null'
 
     when :lasgn
-      var    = mutate_name sexp.shift
-      value  = parse sexp.shift
-      output = value ? "#{ 'var ' unless @vars.include? var }#{ var } = #{ value }" : var
-      @vars << var
+      var         = mutate_name sexp.shift
+      value       = sexp.shift
+      val         = value.dup if value
+      output      = value ? "#{ 'var ' unless @vars.keys.include? var }#{ var } = #{ parse value }" : var
+      @vars[var] ||= []
+      @vars[var] << (val && val.first == :lvar ? @vars[ val.last ] : val )
       output
       
     when :gasgn
@@ -55,6 +57,11 @@ class RubyToJS
       
     when :iasgn
       "#{ sexp.shift.to_s.sub('@', 'this._') } = #{ parse sexp.shift }"
+      
+    when :op_asgn_or
+      var  = sexp.shift
+      asgn = sexp.shift
+      parse asgn.push( s(:or, var, asgn.pop) )
       
     when :ivar
       sexp.shift.to_s.sub('@', 'this._')
@@ -76,11 +83,9 @@ class RubyToJS
     when *LOGICAL
       left, right = sexp.shift, sexp.shift
       op_index    = operator_index operand
-      
       lgroup      = LOGICAL.include?( left.first ) && op_index <= operator_index( left.first )
       left        = parse left
       left        = "(#{ left })" if lgroup
-                  
       rgroup      = LOGICAL.include?( right.first ) && op_index <= operator_index( right.first ) if right
       right       = parse right
       right       = "(#{ right })" if rgroup
@@ -97,7 +102,6 @@ class RubyToJS
     when :call
       receiver, method, args = sexp.shift, sexp.shift, sexp.shift
       return parse args, :lambda if receiver == s(:const, :Proc) and method == :new or method == :lambda && !receiver
-      
       op_index   = operator_index method
       group      = receiver.first == :call && op_index <= operator_index( receiver[2] ) if receiver
       call       = args.find_node(:call) 
@@ -116,9 +120,11 @@ class RubyToJS
         end.join('; ')
         
       when *OPERATORS.flatten
+        method = method_name_substitution receiver, method
         "#{ group ? group(receiver) : parse(receiver) } #{ method } #{ group_args ? group(args) : parse(args) }"  
 
       else
+        method = method_name_substitution receiver, method
         "#{ parse receiver }#{ '.' if receiver }#{ method }(#{ parse args })"
       end
       
@@ -131,9 +137,7 @@ class RubyToJS
         sexp[0] = :arglist
         parse sexp
       else
-        sexp.first[1..-1].zip sexp.last[1..-1] do |var, val|
-          var << val
-        end
+        sexp.first[1..-1].zip sexp.last[1..-1] { |var, val| var << val }
         sexp = sexp.first
         sexp[0] = :block
         parse sexp
@@ -142,15 +146,20 @@ class RubyToJS
     when :if
       condition    = parse sexp.shift
       true_block   = scope sexp.shift, @vars
-      elseif       = parse( sexp.find_node( :if, true ), :if )
-      else_block   = parse( sexp.shift )
-      
+      elseif       = parse sexp.find_node( :if, true ), :if
+      else_block   = parse sexp.shift
       output       = "if (#{ condition }) {#{ true_block }}"
       output.sub!('if', 'else if') if ancestor == :if
       output << " #{ elseif }" if elseif
       output << " else {#{ else_block }}" if else_block
       output
       
+    when :while
+      condition    = parse sexp.shift
+      block        = scope sexp.shift, @vars
+      unknown      = parse sexp.shift
+      "while (#{ condition }) {#{ block }}"
+
     when :iter
       caller       = sexp.shift
       args         = sexp.shift
@@ -160,9 +169,9 @@ class RubyToJS
     
     when :function
       args, body = sexp.shift, sexp.shift
-      body = s(:nil) unless body
-      body = s(:scope, body) unless body.first == :scope
-      body = parse body
+      body ||= s(:nil)
+      body   = s(:scope, body) unless body.first == :scope
+      body   = parse body
       body.sub!(/return var (\w+) = ([^;]+)\z/, 'var \1 = \2; return \1')
       "function(#{ parse args }) {#{ body }}"
       
@@ -192,10 +201,46 @@ class RubyToJS
     when :args
       sexp.join(', ')
       
+    when :dstr
+      sexp.unshift s(:str, sexp.shift)
+      sexp.collect{ |s| parse s }.join(' + ')
+      
+    when :evstr
+      parse sexp.shift
+      
     else 
       raise "unkonwn operand #{ operand.inspect }"
     end
-
+  end
+  
+  SUBSTITUTIONS = Hash.new().merge({ 
+    # :array => {
+      :size     => :length,
+      :<<       => :+,
+      :index    => 'indexOf',
+      :rindex   => 'lastIndexOf',
+      :any?     => 'some',
+      :all?     => 'every',
+      :find_all => 'filter',
+      :each_with_index => 'each',
+    # },
+    #     :* => {
+      :to_a => 'toArray',
+      :to_s => 'toString',
+    #     }
+  })
+  
+  def method_name_substitution receiver, method
+    # if receiver
+    #       receiver = last_original_assign receiver if receiver.first == :lvar
+    #       receiver = receiver.flatten.first
+    #     end
+    # SUBSTITUTIONS[ :* ][ method ] || method || SUBSTITUTIONS[ receiver ][ method ] || method
+    SUBSTITUTIONS[ method ] || method
+  end
+  
+  def last_original_assign receiver
+    ( @vars[ receiver.last ] || [] ).first || []
   end
   
   def group( sexp )

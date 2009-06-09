@@ -57,6 +57,18 @@ describe RubyToJS do
     it "should parse mass assign" do
       to_js( "a , b = 1, 2" ).should == 'var a = 1; var b = 2'
     end
+    
+    it "should parse" do
+      to_js( 'a += 1').should == 'var a = a + 1'
+    end
+    
+    it "should do short circuit assign" do
+      to_js( 'a = nil; a ||= 1').should == 'var a = null; a = a || 1'
+    end
+    
+    it "should parse tertiary operator" do
+      to_js( 'true ? true : false').should == "if (true) {true} else {false}"
+    end
   end
   
   describe 'method call' do
@@ -168,6 +180,21 @@ describe RubyToJS do
     end
   end
   
+  describe 'eval' do
+    it "should eval" do
+      to_js('eval( "hi" )').should == 'eval("hi")'
+    end
+    
+    it "should parse string " do
+      to_js( '"time is #{ Time.now }, say #{ hello }"' ).should == '"time is " + Time.now() + ", say " + hello()'
+    end
+    
+    it "should parse string " do
+      to_js( '"time is #{ Time.now }"' ).should == '"time is " + Time.now()'
+    end
+    
+  end
+  
   describe 'control' do
     it "should parse single line if" do
       to_js( '1 if true' ).should == 'if (true) {1}'
@@ -187,6 +214,14 @@ describe RubyToJS do
     
     it "should handle basic variable scope" do
       to_js( 'a = 1; if true; a = 2; b = 1; elsif false; a = 3; b = 2; else; a = 4; b =3; end' ).should == 'var a = 1; if (true) {a = 2; var b = 1} else if (false) {a = 3; var b = 2} else {a = 4; var b = 3}'
+    end
+    
+    it "should handle while loop" do
+      to_js( 'a = 0; while true; a += 1; end').should == 'var a = 0; while (true) {a = a + 1}'
+    end
+    
+    it "should handle another while loop" do
+      to_js( 'a = 0; while true || false; a += 1; end').should == 'var a = 0; while (true || false) {a = a + 1}'
     end
   end
   
@@ -262,6 +297,27 @@ describe RubyToJS do
     it "should parse metod def" do
       to_js('def method; end').should == 'function method() {return null}'
     end
+  end
+  
+  describe 'method substitutions' do
+    # it "should not convert name" do
+    #       to_js('a.size').should == 'a().size()'
+    #     end
     
+    it "should convert size to length" do
+      to_js('[].size').should == '[].length()'
+    end
+    
+    it "should convert size to length after assign" do
+      to_js('a = []; a.size').should == 'var a = []; a.length()'
+    end
+    
+    it "should convert size to length after several assigns" do
+      to_js('a = []; b = a; c = b; d = c; d.size').should == 'var a = []; var b = a; var c = b; var d = c; d.length()'
+    end
+    
+    it "should subtitute << for + for array" do
+      to_js('a = []; a << []').should == 'var a = []; a + []'
+    end
   end
 end
