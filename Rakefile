@@ -7,7 +7,7 @@ $hoe = Hoe.new('ruby2js', Ruby2JS::VERSION) do |p|
   p.developer('Macario Ortega', 'macarui@gmail.com')
   p.changes              = p.paragraphs_of("History.txt", 0..1).join("\n\n")
   # p.rubyforge_name       = p.name # TODO this is default value
-  p.url                  = 'http://github.com/maca/ruby_to_js'
+  p.url                  = 'http://github.com/maca/ruby2js'
   p.extra_deps           = [
     ['sexp_processor','>= 3.0.1'],
   ]
