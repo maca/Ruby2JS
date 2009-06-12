@@ -4,7 +4,6 @@ PostInstall.txt
 README.rdoc
 Rakefile
 lib/ruby2js.rb
-ruby_to_js.gemspec
 script/console
 script/destroy
 script/generate
