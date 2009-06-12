@@ -3,9 +3,10 @@ Manifest.txt
 PostInstall.txt
 README.rdoc
 Rakefile
-lib/ruby_to_js.rb
+lib/ruby2js.rb
+ruby_to_js.gemspec
 script/console
 script/destroy
 script/generate
-test/test_helper.rb
-test/test_ruby_to_js.rb
+spec/spec_helper.rb
+spec/transliteration_spec.rb

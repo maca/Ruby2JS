@@ -1,14 +1,14 @@
 require  File.dirname( __FILE__ ) + '/spec_helper'
 require 'ruby_parser'
 
-describe RubyToJS do
+describe Ruby2JS do
   
   def rb_parse( string )
     RubyParser.new.parse string
   end
   
   def to_js( string)
-    RubyToJS.new( rb_parse( string ) ).to_js
+    Ruby2JS.new( rb_parse( string ) ).to_js
   end
   
   describe 'literals' do
