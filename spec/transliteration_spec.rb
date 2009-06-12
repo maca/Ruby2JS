@@ -175,15 +175,15 @@ describe RubyToJS do
     end
     
     it "should nest arguments as needed" do
-      exp = 'a(1 + 2)'
+      exp = 'a((1 + 2) * 2 - 1)'
       to_js( exp ).should == exp
     end
   end
   
-  describe 'eval' do
-    it "should eval" do
-      to_js('eval( "hi" )').should == 'eval("hi")'
-    end
+  describe 'string concat' do
+    # it "should eval" do
+    #   to_js('eval( "hi" )').should == 'eval("hi")'
+    # end
     
     it "should parse string " do
       to_js( '"time is #{ Time.now }, say #{ hello }"' ).should == '"time is " + Time.now() + ", say " + hello()'
